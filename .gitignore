@@ -1,20 +1,23 @@
-# Môi trường ảo
+# Môi trường ảo (áp dụng cho mọi thư mục con)
 venv/
-env/
+**/venv/
 
 # Python cache
 __pycache__/
+**/__pycache__/
 *.pyc
 
-# Biến môi trường (chứa thông tin nhạy cảm như API key, mật khẩu)
-.env
+# Database
+*.db
+**/*.db
 
-# File của IDE
+# Biến môi trường
+.env
+**/.env
+
+# IDE
 .vscode/
 .idea/
 
 # macOS
 .DS_Store
-
-# Database
-*.db
