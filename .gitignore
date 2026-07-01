@@ -1,0 +1,17 @@
+# Môi trường ảo
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Biến môi trường (chứa thông tin nhạy cảm như API key, mật khẩu)
+.env
+
+# File của IDE
+.vscode/
+.idea/
+
+# macOS
+.DS_Store
