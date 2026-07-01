@@ -1,116 +1,86 @@
-"""
-Todo Service - Microservice cơ bản đầu tiên
-=============================================
-Đây là 1 REST API đơn giản quản lý danh sách công việc (Todo).
-Dữ liệu lưu trong bộ nhớ (in-memory) - mất khi restart server.
-Ở giai đoạn sau ta sẽ thay bằng database thật.
-"""
+from fastapi import FastAPI, HTTPException, Depends
+from sqlalchemy.orm import Session
+from sqlalchemy import create_engine
 
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from typing import Optional
-from datetime import datetime
+import models
+import schemas
+from database import SessionLocal, engine
 
 # ----------------------------------------------------------------
-# 1. Khởi tạo ứng dụng FastAPI
+# 1. Tạo bảng trong database (nếu chưa có)
 # ----------------------------------------------------------------
+models.Base.metadata.create_all(bind=engine)
+
 app = FastAPI(
     title="Todo Service",
-    description="Microservice cơ bản để học Python",
-    version="1.0.0",
+    description="Microservice co ban - da co database",
+    version="2.0.0",
 )
 
 # ----------------------------------------------------------------
-# 2. Định nghĩa "hình dạng" dữ liệu bằng Pydantic model
-#    -> Đây gọi là "schema", giúp FastAPI tự validate dữ liệu vào/ra
+# 2. Dependency: mở session DB cho mỗi request, tự đóng khi xong
 # ----------------------------------------------------------------
-class TodoCreate(BaseModel):
-    title: str
-    description: Optional[str] = None
-
-
-class TodoUpdate(BaseModel):
-    title: Optional[str] = None
-    description: Optional[str] = None
-    completed: Optional[bool] = None
-
-
-class Todo(BaseModel):
-    id: int
-    title: str
-    description: Optional[str] = None
-    completed: bool = False
-    created_at: datetime
-
-
-# ----------------------------------------------------------------
-# 3. "Database" giả lập bằng dictionary trong bộ nhớ
-# ----------------------------------------------------------------
-todos_db: dict[int, Todo] = {}
-next_id: int = 1
-
-
-# ----------------------------------------------------------------
-# 4. Các endpoint (route) - đây là phần "API" mà client sẽ gọi
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+        
+        # ----------------------------------------------------------------
+# 3. Các endpoint
 # ----------------------------------------------------------------
 
 @app.get("/")
 def read_root():
-    """Endpoint kiểm tra service còn sống không (health check)."""
-    return {"message": "Todo Service đang chạy!", "status": "ok"}
+    return {"message": "Todo Service dang chay!", "status": "ok"}
 
 
-@app.post("/todos", response_model=Todo, status_code=201)
-def create_todo(todo: TodoCreate):
-    """Tạo mới 1 todo."""
-    global next_id
-    new_todo = Todo(
-        id=next_id,
-        title=todo.title,
-        description=todo.description,
-        completed=False,
-        created_at=datetime.now(),
-    )
-    todos_db[next_id] = new_todo
-    next_id += 1
-    return new_todo
+@app.post("/todos", response_model=schemas.Todo, status_code=201)
+def create_todo(todo: schemas.TodoCreate, db: Session = Depends(get_db)):
+    db_todo = models.Todo(title=todo.title, description=todo.description)
+    db.add(db_todo)
+    db.commit()
+    db.refresh(db_todo)
+    return db_todo
 
 
-@app.get("/todos", response_model=list[Todo])
-def list_todos(completed: Optional[bool] = None):
-    """Lấy danh sách todo, có thể lọc theo trạng thái completed."""
-    results = list(todos_db.values())
+@app.get("/todos", response_model=list[schemas.Todo])
+def list_todos(completed: bool | None = None, db: Session = Depends(get_db)):
+    query = db.query(models.Todo)
     if completed is not None:
-        results = [t for t in results if t.completed == completed]
-    return results
+        query = query.filter(models.Todo.completed == completed)
+    return query.all()
 
 
-@app.get("/todos/{todo_id}", response_model=Todo)
-def get_todo(todo_id: int):
-    """Lấy 1 todo theo id."""
-    todo = todos_db.get(todo_id)
+@app.get("/todos/{todo_id}", response_model=schemas.Todo)
+def get_todo(todo_id: int, db: Session = Depends(get_db)):
+    todo = db.query(models.Todo).filter(models.Todo.id == todo_id).first()
     if todo is None:
-        raise HTTPException(status_code=404, detail="Không tìm thấy todo")
+        raise HTTPException(status_code=404, detail="Khong tim thay todo")
     return todo
 
 
-@app.put("/todos/{todo_id}", response_model=Todo)
-def update_todo(todo_id: int, update: TodoUpdate):
-    """Cập nhật 1 todo (title, description, completed)."""
-    todo = todos_db.get(todo_id)
+@app.put("/todos/{todo_id}", response_model=schemas.Todo)
+def update_todo(todo_id: int, update: schemas.TodoUpdate, db: Session = Depends(get_db)):
+    todo = db.query(models.Todo).filter(models.Todo.id == todo_id).first()
     if todo is None:
-        raise HTTPException(status_code=404, detail="Không tìm thấy todo")
+        raise HTTPException(status_code=404, detail="Khong tim thay todo")
 
     update_data = update.model_dump(exclude_unset=True)
-    updated_todo = todo.model_copy(update=update_data)
-    todos_db[todo_id] = updated_todo
-    return updated_todo
+    for key, value in update_data.items():
+        setattr(todo, key, value)
+
+    db.commit()
+    db.refresh(todo)
+    return todo
 
 
 @app.delete("/todos/{todo_id}", status_code=204)
-def delete_todo(todo_id: int):
-    """Xoá 1 todo."""
-    if todo_id not in todos_db:
-        raise HTTPException(status_code=404, detail="Không tìm thấy todo")
-    del todos_db[todo_id]
+def delete_todo(todo_id: int, db: Session = Depends(get_db)):
+    todo = db.query(models.Todo).filter(models.Todo.id == todo_id).first()
+    if todo is None:
+        raise HTTPException(status_code=404, detail="Khong tim thay todo")
+    db.delete(todo)
+    db.commit()
     return None
