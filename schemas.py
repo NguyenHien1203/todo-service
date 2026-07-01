@@ -6,6 +6,7 @@ from datetime import datetime
 class TodoCreate(BaseModel):
     title: str
     description: Optional[str] = None
+    user_id: int
 
 
 class TodoUpdate(BaseModel):
@@ -19,6 +20,7 @@ class Todo(BaseModel):
     title: str
     description: Optional[str] = None
     completed: bool
+    user_id: int
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

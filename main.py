@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import create_engine
+import httpx
 
 import models
 import schemas
@@ -13,9 +14,11 @@ models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="Todo Service",
-    description="Microservice co ban - da co database",
-    version="2.0.0",
+    description="Microservice co ban - goi sang User Service",
+    version="3.0.0",
 )
+
+USER_SERVICE_URL = "http://127.0.0.1:8001"
 
 # ----------------------------------------------------------------
 # 2. Dependency: mở session DB cho mỗi request, tự đóng khi xong
@@ -38,7 +41,27 @@ def read_root():
 
 @app.post("/todos", response_model=schemas.Todo, status_code=201)
 def create_todo(todo: schemas.TodoCreate, db: Session = Depends(get_db)):
-    db_todo = models.Todo(title=todo.title, description=todo.description)
+    # Gọi sang user-service để kiểm tra user có tồn tại không
+    try:
+        response = httpx.get(f"{USER_SERVICE_URL}/users/{todo.user_id}", timeout=5.0)
+    except httpx.RequestError:
+        raise HTTPException(
+            status_code=503,
+            detail="Khong the ket noi toi User Service"
+        )
+
+    if response.status_code == 404:
+        raise HTTPException(
+            status_code=400,
+            detail=f"User id {todo.user_id} khong ton tai"
+        )
+
+    # User hợp lệ -> tạo todo
+    db_todo = models.Todo(
+        title=todo.title,
+        description=todo.description,
+        user_id=todo.user_id,
+    )
     db.add(db_todo)
     db.commit()
     db.refresh(db_todo)
